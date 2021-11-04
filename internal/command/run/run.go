@@ -11,7 +11,8 @@ import (
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2/altsrc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -21,50 +22,53 @@ import (
 	"github.com/weaveworks/flintlock/internal/inject"
 	"github.com/weaveworks/flintlock/internal/version"
 	"github.com/weaveworks/flintlock/pkg/defaults"
-	"github.com/weaveworks/flintlock/pkg/flags"
 	"github.com/weaveworks/flintlock/pkg/log"
 )
 
 // NewCommand creates a new cobra command for running flintlock.
-func NewCommand(cfg *config.Config) (*cobra.Command, error) {
-	cmd := &cobra.Command{
-		Use:   "run",
-		Short: "Start running the flintlock API",
-		PreRunE: func(c *cobra.Command, _ []string) error {
-			flags.BindCommandToViper(c)
-
-			logger := log.GetLogger(c.Context())
+func NewCommand(cfg *config.Config) *cli.Command {
+	cmd := &cli.Command{
+		Name:  "run",
+		Usage: "Run flintlock",
+		Action: func(c *cli.Context) error {
+			return runServer(c.Context, cfg)
+		},
+		Before: func(c *cli.Context) error {
+			logger := log.GetLogger(c.Context)
 			logger.Infof(
 				"flintlockd, version=%s, built_on=%s, commit=%s",
 				version.Version,
 				version.BuildDate,
 				version.CommitHash,
 			)
-
+			
 			return nil
-		},
-		RunE: func(c *cobra.Command, _ []string) error {
-			return runServer(c.Context(), cfg)
 		},
 	}
 
 	cmdflags.AddGRPCServerFlagsToCommand(cmd, cfg)
-	if err := cmdflags.AddContainerDFlagsToCommand(cmd, cfg); err != nil {
-		return nil, fmt.Errorf("adding containerd flags to run command: %w", err)
-	}
-	if err := cmdflags.AddFirecrackerFlagsToCommand(cmd, cfg); err != nil {
-		return nil, fmt.Errorf("adding firecracker flags to run command: %w", err)
-	}
-	if err := cmdflags.AddNetworkFlagsToCommand(cmd, cfg); err != nil {
-		return nil, fmt.Errorf("adding network flags to run command: %w", err)
-	}
-	if err := cmdflags.AddHiddenFlagsToCommand(cmd, cfg); err != nil {
-		return nil, fmt.Errorf("adding hidden flags to run command: %w", err)
-	}
-	cmd.Flags().StringVar(&cfg.StateRootDir, "state-dir", defaults.StateRootDir, "The directory to use for the as the root for runtime state.")
-	cmd.Flags().DurationVar(&cfg.ResyncPeriod, "resync-period", defaults.ResyncPeriod, "Reconcile the specs to resynchronise them based on this period.")
+	cmdflags.AddContainerDFlagsToCommand(cmd, cfg)
+	cmdflags.AddFirecrackerFlagsToCommand(cmd, cfg)
+	cmdflags.AddNetworkFlagsToCommand(cmd, cfg)
+	cmdflags.AddHiddenFlagsToCommand(cmd, cfg)
 
-	return cmd, nil
+	stateRootDirFlag := altsrc.NewPathFlag(&cli.PathFlag{
+		Name:        "state-dir",
+		Usage:       "Path to the directory where flintlock will store its state",
+		Value:       defaults.StateRootDir,
+		Destination: &cfg.StateRootDir,
+	})
+
+	resyncPeriodflag := altsrc.NewDurationFlag(&cli.DurationFlag{
+		Name:        "resync-period",
+		Usage:       "Resync period for the specs reconciliation",
+		Value:       defaults.ResyncPeriod,
+		Destination: &cfg.ResyncPeriod,
+	})
+
+	cmd.Flags = append(cmd.Flags, stateRootDirFlag, resyncPeriodflag)
+
+	return cmd
 }
 
 func runServer(ctx context.Context, cfg *config.Config) error {

@@ -9,26 +9,26 @@ import (
 	"sync"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v2"
 	"google.golang.org/grpc"
 
 	mvmv1 "github.com/weaveworks/flintlock/api/services/microvm/v1alpha1"
 	cmdflags "github.com/weaveworks/flintlock/internal/command/flags"
 	"github.com/weaveworks/flintlock/internal/config"
 	"github.com/weaveworks/flintlock/internal/version"
-	"github.com/weaveworks/flintlock/pkg/flags"
 	"github.com/weaveworks/flintlock/pkg/log"
 )
 
-// NewCommand creates a new cobra command for running the gRPC HTTP gateway.
-func NewCommand(cfg *config.Config) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "gw",
-		Short: "Start serving the HTTP gateway for the flintlock gRPC API",
-		PreRunE: func(c *cobra.Command, _ []string) error {
-			flags.BindCommandToViper(c)
-
-			logger := log.GetLogger(c.Context())
+// NewCommand creates a new cli command for running the gRPC HTTP gateway.
+func NewCommand(cfg *config.Config) *cli.Command {
+	cmd := &cli.Command{
+		Name:  "gw",
+		Usage: "Run the gRPC HTTP gateway",
+		Action: func(c *cli.Context) error {
+			return runGWServer(c.Context, cfg)
+		},
+		Before: func(c *cli.Context) error {
+			logger := log.GetLogger(c.Context)
 			logger.Infof(
 				"flintlockd, version=%s, built_on=%s, commit=%s",
 				version.Version,
@@ -37,9 +37,6 @@ func NewCommand(cfg *config.Config) *cobra.Command {
 			)
 
 			return nil
-		},
-		RunE: func(c *cobra.Command, _ []string) error {
-			return runGWServer(c.Context(), cfg)
 		},
 	}
 
